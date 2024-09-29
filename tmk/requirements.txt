@@ -1,0 +1,9 @@
+fastapi
+pydantic
+granian
+uvicorn
+moviepy
+tqdm
+requests
+scikit-learn
+pandas

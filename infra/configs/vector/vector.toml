@@ -1,0 +1,20 @@
+[api]
+enabled = true
+address = "0.0.0.0:8686"
+
+[sources.docker_logs]
+type = "docker_logs"
+exclude_containers = ["openobserve"]
+
+[sinks.zinc]
+type = "http"
+inputs = ["docker_logs"]
+uri = "http://openobserve:5080/api/default/default/_json"
+method = "post"
+auth.strategy = "basic"
+auth.user = "${ZO_ROOT_USER_EMAIL}"
+auth.password = "cnfhjcnm"
+compression = "gzip"
+encoding.codec = "json"
+encoding.timestamp_format = "rfc3339"
+healthcheck.enabled = false

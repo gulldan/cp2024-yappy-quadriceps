@@ -1,0 +1,75 @@
+lint.select = ["ALL"]
+
+lint.ignore = ["ANN001","ANN101","ANN201",
+                "D100", "D101","D102",
+                "D103", "D107","TRY201",
+                "COM812", "ISC001", "PTH","D104",
+                "INP001","RUF012", "ANN202", "N812",
+                "RET505","PLW0603", "G004","E722","PLR2004",
+                "FIX002", "TD003", "RUF010", "DTZ", "D205", "N806",
+                "ANN205", "FBT002", "RET504", "S101", "FBT003",
+                "RUF001","BLE001","N816","S324","N999",
+                "B904","TRY","EM102","N803","ANN204","FBT001","ANN003",
+                "ARG002", "ANN002","N801","D105","EM101","D417",
+                "E712","PLW2901","PLE1205","SLF001","PLR0911","ISC003",
+                "G003","PD015","PERF401","TD","RUF003","S311","ANN102",
+                "RET503","G001","G002","RUF006","B012","EXE002","RUF002", "T201"]
+
+line-length = 130
+
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+    ".idea",
+    "__pycahe__",
+    "tests"
+]
+
+# Assume Python 3.11.
+target-version = "py311"
+
+lint.unfixable = ["RUF003","RUF001","RUF010", "G004","TRY003","EM101","E712","ERA001", "RET504"]
+# fixable = ["Q"]
+
+
+[lint.mccabe]
+# Flag errors (`C901`) whenever the complexity level exceeds 5.
+max-complexity = 50
+
+[lint.pylint]
+max-branches = 50
+max-statements = 150
+max-args = 10
+
+[lint.pydocstyle]
+convention = "google"
+
+[format]
+# Use single quotes for non-triple-quoted strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"

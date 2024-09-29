@@ -1,0 +1,127 @@
+swagger: "2.0"
+
+info:
+  version: "1.0.0"
+  title: "Video Service API"
+
+paths:
+  /download-video:
+    post:
+      tags:
+      - Видео
+      summary: "Скачать видео по URL"
+      parameters:
+        - in: body
+          name: videoLink
+          required: true
+          schema:
+            $ref: "#/definitions/VideoLinkRequest"
+      responses:
+        200:
+          description: "Успешное сообщение"
+        500:
+          description: "Ошибка"
+
+  /batch-download:
+    post:
+      tags:
+      - Видео
+      summary: "Батчевое скачивание видео по URL"
+      parameters:
+        - in: body
+          name: videoLinks
+          required: true
+          schema:
+            $ref: "#/definitions/BatchDownloadRequest"
+      responses:
+        200:
+          description: "Успешное сообщение"
+        500:
+          description: "Ошибка"
+
+  /process-videos:
+    post:
+      tags:
+      - Видео
+      summary: "Обработка видео для извлечения признаков"
+      parameters:
+        - in: body
+          name: processRequest
+          required: true
+          schema:
+            $ref: "#/definitions/ProcessVideosRequest"
+      responses:
+        200:
+          description: "Успешное сообщение"
+        500:
+          description: "Ошибка"
+
+  /cluster-videos:
+    post:
+      tags:
+      - Видео
+      summary: "Кластеризация видео по предоставленным URL"
+      parameters:
+        - in: body
+          name: videoLinks
+          required: true
+          schema:
+            $ref: "#/definitions/BatchDownloadRequest"
+      responses:
+        200:
+          description: "Информация о кластере"
+        500:
+          description: "Ошибка"
+
+  /submit:
+    post:
+      tags:
+      - Submission
+      summary: "Генерация submission.csv на основе тестовых данных"
+      consumes:
+      - multipart/form-data
+      parameters:
+        - in: formData
+          name: file
+          type: file
+          required: true
+          description: "CSV файл с тестовыми данными"
+      responses:
+        200:
+          description: "Успешное сообщение"
+        500:
+          description: "Ошибка"
+
+definitions:
+  VideoLinkRequest:
+    type: object
+    properties:
+      link:
+        type: string
+        description: "URL видео"
+
+  BatchDownloadRequest:
+    type: object
+    properties:
+      links:
+        type: array
+        items:
+          type: string
+        description: "Список URL видео"
+
+  ClusterResponse:
+    type: object
+    properties:
+      clusters:
+        type: object
+        additionalProperties:
+          type: array
+          items:
+            type: string
+
+  ProcessVideosRequest:
+    type: object
+    properties:
+      csv_path:
+        type: string
+        description: "Путь к CSV файлу с UUID видео"

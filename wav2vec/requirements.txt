@@ -1,0 +1,11 @@
+granian
+fastapi
+transformers
+python-multipart
+librosa
+qdrant-client
+tqdm
+yappi
+aiofiles
+aiohttp
+confluent_kafka

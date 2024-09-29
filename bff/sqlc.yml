@@ -1,0 +1,10 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/repository/postgres/sql/task_query.sql"
+    schema: "internal/repository/postgres/sql/task_schema.sql"
+    gen:
+      go:
+        package: "pgsql"
+        out: "internal/repository/postgres"
+        sql_package: "pgx/v5"

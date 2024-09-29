@@ -1,0 +1,395 @@
+version: '3'
+
+networks:
+  cp2024yappy:
+    name: cp2024yappy
+    driver: bridge
+
+services:
+  wav2vec:
+    build:
+      context: ../wav2vec
+      dockerfile: Dockerfile
+    image: wav2vec
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+    container_name: wav2vec
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${AE_PORT}:8000
+    volumes:
+      - type: bind
+        source: ${MODELS_PATH}
+        target: /app/models
+    environment:
+      HUGGINGFACE_HUB_CACHE: ${HUGGINGFACE_HUB_CACHE}
+      TORCH_HOME: ${TORCH_HOME}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      CREATE_COLLECTION: true
+      KAFKA_ADDR: kafka
+      KAFKA_PORT: "9092"
+      KAFKA_CONSUME_TOPIC: "audio-input"
+      KAFKA_PRODUCE_TOPIC: "audio-copyright"
+
+
+  video_copy:
+    build:
+      context: ../video_copy
+      dockerfile: Dockerfile
+    image: video_copy
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 1
+            capabilities: [gpu]
+    container_name: video_copy
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${VE_PORT}:8000
+    volumes:
+      - type: bind
+        source: ${MODELS_PATH}
+        target: /app/models
+    environment:
+      QDRANT_ADDR: qdrant
+      QDRANT_PORT: 6334
+      ENCODER_MODEL: ./models/ve/sscd_disc_large.torchscript.pt
+      BATCH_SIZE: 16
+      CREATE_COLLECTION: true
+      DEVICE: "cuda"
+      HUGGINGFACE_HUB_CACHE: ./models/hf 
+      TORCH_HOME: ./models/torch
+      KAFKA_ADDR: kafka
+      KAFKA_PORT: "9092"
+      KAFKA_CONSUME_TOPIC: "video-input"
+      KAFKA_PRODUCE_TOPIC: "video-copyright"
+
+  bff:
+    build:
+      context: ../bff
+      dockerfile: Dockerfile
+    image: bff
+    container_name: bff
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    depends_on:
+      - db
+    ports:
+      - ${LOCALHOST_IP}:${BFF_EXT_HTTP_PORT}:8888
+      - ${LOCALHOST_IP}:${BFF_EXT_GRPC_PORT}:7083
+    environment:
+      LOG_LEVEL: "debug"
+      PG_ADDR: 'host=db user=postgres password=${POSTGRES_PASSWORD} dbname=bazadannih port=5432 sslmode=disable'
+      MINIO_ADDR: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_IS_USE_SSL: false
+      VIDEOCOPY_ADDR: http://video_copy:8000
+      WAV2VEC_ADDR: http://wav2vec:8000
+      KAFKA_ADDRESS: kafka:9092
+  
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${PROMETHEUS_EXT_PORT}:9090
+    volumes:
+      - type: bind
+        source: ${PROMETHEUS_PATH}/config
+        target: /etc/prometheus
+      - type: bind
+        source: ${PROMETHEUS_PATH}/data
+        target: /prometheus
+      - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    depends_on:
+      - prometheus
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${GRAFANA_EXT_PORT}:3000
+    volumes:
+      - type: bind
+        source: ${GRAFANA_PATH}
+        target: /var/lib/grafana
+      - type: bind
+        source: ${GRAFANA_PATH}/provisioning
+        target: /etc/grafana/provisioning
+  
+  keydb:
+    container_name: keydb
+    image: eqalpha/keydb:latest
+    restart: always
+    networks:
+      - cp2024yappy
+    ports:
+      -  ${LOCALHOST_IP}:${KEYDB_EXT_PORT}:6379
+
+  qdrant:
+    container_name: qdrant
+    image: qdrant/qdrant:latest
+    restart: always
+    networks:
+      - cp2024yappy
+    volumes:
+      - type: bind
+        source: ${QDRANT_PATH}
+        target: /qdrant/storage
+    ports:
+      -  ${LOCALHOST_IP}:${QDRANT_EXT_PORT_HTTP}:6333
+      -  ${LOCALHOST_IP}:${QDRANT_EXT_PORT_GRPC}:6334
+
+  minio:
+    image: minio/minio:latest
+    entrypoint: ['minio', 'server', '/data', '--console-address', ':9001']
+    container_name: minio
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    depends_on:
+      - prometheus
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${MINIO_INT_PORT}:9000
+      - ${LOCALHOST_IP}:${MINIO_EXT_PORT}:9001
+    volumes:
+      - type: bind
+        source: ${MINIO_PATH}/data
+        target: /data
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_PROMETHEUS_URL=http://prometheus:9090
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_PROMETHEUS_AUTH_TYPE=public
+
+  db:
+    container_name: db
+    image: postgres:16-alpine
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${POSTGRES_EXT_PORT}:5432
+    volumes:
+      - type: bind
+        source: ${DB_PATH}
+        target: /var/lib/postgresql/data
+      - ./configs/postgresql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    command: postgres -c 'max_connections=1000'
+
+  init-container:
+    image: alpine/curl:latest
+    container_name: init-container
+    entrypoint: ["sh", "/usr/local/bin/token.sh"]
+    restart: "no"
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    depends_on:
+      - openobserve
+    networks:
+      - cp2024yappy
+    environment:
+      - VECTOR_CONFIG=${VECTOR_CONFIG}
+      - TOKEN_USER=${ZO_ROOT_USER_EMAIL}
+      - TOKEN_PASSWORD=${ZO_ROOT_USER_PASSWORD}
+      - VECTOR_DIR=${VECTOR_DIR}
+    volumes:
+      - type: bind
+        source: ${VECTOR_DIR}
+        target: /etc/vector
+      - type: bind
+        source: ./configs/vector/token.sh
+        target: /usr/local/bin/token.sh
+
+  vector:
+    image: timberio/vector:0.41.0-alpine
+    container_name: vector
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    depends_on:
+      - openobserve
+      - init-container
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${VECTOR_EXT_PORT}:8686
+    environment:
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - VECTOR_CONFIG=${VECTOR_CONFIG}
+      - ZO_ROOT_USER_EMAIL=${ZO_ROOT_USER_EMAIL}
+    volumes:
+      - type: bind
+        source: ${VECTOR_DIR}
+        target: /etc/vector
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:v0.11.0-amd64
+    container_name: openobserve
+    restart: always
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    ports:
+      - ${LOCALHOST_IP}:${OPENOBSERVE_EXT_PORT}:5080
+    environment:
+      - ZO_ROOT_USER_EMAIL=${ZO_ROOT_USER_EMAIL}
+      - ZO_ROOT_USER_PASSWORD=${ZO_ROOT_USER_PASSWORD}
+      - ZO_DATA_DIR=${ZO_DATA_DIR}
+      - ZO_TELEMETRY=false
+      - RUST_LOG=warn
+    volumes:
+      - type: bind
+        source: ${OPENOBSERVE_DIR}
+        target: ${ZO_DATA_DIR}
+  
+  node-exporter:
+    image: quay.io/prometheus/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    logging:
+      options:
+        max-size: "100m"
+        max-file: "1"
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+      - '/:/host:ro,rslave'
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    deploy:
+      mode: global
+
+  zookeeper-server:
+    container_name: zookeeper-server
+    image: bitnami/zookeeper:3.9.2
+    restart: always
+    logging:
+      options:
+        max-size: "500m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    depends_on: 
+      - kafka
+    ports:
+      - ${ZOOKEEPER_EXT_PORT}:2181
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: 'yes'
+
+  kafka:
+    container_name: kafka
+    image: bitnami/kafka:3.8.0
+    restart: always
+    logging:
+      options:
+        max-size: "500m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    ports:
+      - "9093:9093"
+    environment:
+      - "KAFKA_ENABLE_KRAFT=no"
+      - "ALLOW_PLAINTEXT_LISTENER=yes"
+      - "KAFKA_CFG_MAX_PARTITION_FETCH_BYTES=1048576000"
+      - "KAFKA_CFG_MAX_REQUEST_SIZE=1048576000"
+      - "KAFKA_CFG_MESSAGE_MAX_BYTES=1048576000"
+      - "KAFKA_CFG_NUM_PARTITIONS=100"
+      - "KAFKA_BROKER_ID=1"
+      - "KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper-server:2181"
+      - "KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CLIENT:PLAINTEXT,EXTERNAL:PLAINTEXT"
+      - "KAFKA_CFG_LISTENERS=CLIENT://:9092,EXTERNAL://:9093"
+      - "KAFKA_CFG_ADVERTISED_LISTENERS=CLIENT://kafka:9092,EXTERNAL://localhost:9093"
+      - "KAFKA_CFG_INTER_BROKER_LISTENER_NAME=CLIENT"
+      - "KAFKA_CFG_LOG_RETENTION_HOURS=4320"
+      - "KAFKA_LOG4J_ROOT_LOGLEVEL=WARN"
+      - "KAFKA_TOOLS_LOG4J_LOGLEVEL=ERROR"
+      - "KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true"
+      - "KAFKA_CREATE_TOPICS=audio-input:1:1,video-input:1:1,audio-copyright:1:1,video-copyright:1:1"
+
+  kafka-ui:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:v0.7.2
+    restart: always
+    logging:
+      options:
+        max-size: "500m"
+        max-file: "1"
+    networks:
+      - cp2024yappy
+    depends_on: 
+      - kafka
+    ports:
+      - 18080:8080
+    environment:
+      KAFKA_CLUSTERS_0_NAME: kafka
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      LOGGING_LEVEL_ROOT: warn
